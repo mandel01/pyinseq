@@ -1,9 +1,11 @@
 #!/usr/bin/env python
-'''Main script for running the pyinseq package.'''
+
+"""Main script for running the pyinseq package."""
 
 import argparse
 import glob
 import os
+import regex as re
 from shutil import copyfile
 import sys
 import yaml
@@ -15,7 +17,7 @@ from utils import convert_to_filename, createExperimentDirectories
 
 
 def parseArgs(args):
-    '''Parse command line arguments.'''
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--input',
                         help='input Illumina reads file or folder',
@@ -39,16 +41,23 @@ def parseArgs(args):
                         corresponding to the sample names',
                         action='store_true',
                         default=False)
+    parser.add_argument('--demultiplex',
+                        help='demultiplex initial file into separate files by barcode',
+                        action='store_true',
+                        default=False)
+    parser.add_argument('--compress',
+                        help='compress (gzip) demultiplexed samples',
+                        action='store_true',
+                        default=False)
     parser.add_argument('--keepall',
-                        help='keep all intermediate files generated \
-                        (warning: large size!)',
+                        help='keep all intermediate files generated',
                         action='store_true',
                         default=False)
     return parser.parse_args(args)
 
 
 class cd:
-    '''Context manager to change to the specified directory then back.'''
+    """Context manager to change to the specified directory then back."""
     def __init__(self, newPath):
         self.newPath = os.path.expanduser(newPath)
 
@@ -84,7 +93,7 @@ class Settings():
         Settings.summary_yaml = 'results/{}/summary.yml'.format(Settings.experiment)
 
 def set_disruption(d):
-    # if disruption value is not from 0.0 to 1.0, set to default value of 1.0
+    """Check that gene disrution is 0.0 to 1.0; otherwise set to 1.0"""
     if d < 0.0 or d > 1.0:
         print('\n*** WARNING ***'
               '\nDisruption value: {}'
@@ -94,7 +103,7 @@ def set_disruption(d):
     return d
 
 def tab_delimited_samples_to_dict(sample_file):
-    """Return an ordered dictionary of sample names, barcodes from a tab-delimited file."""
+    """Read sample names, barcodes from tab-delimited into an OrderedDict."""
     samplesDict = collections.OrderedDict()
     with open(sample_file, 'r', newline='') as csvfile:
         for line in csv.reader(csvfile, delimiter='\t'):
@@ -110,12 +119,13 @@ def tab_delimited_samples_to_dict(sample_file):
     return samplesDict
 
 def yaml_samples_to_dict(sample_file):
-    """Not written yet"""
+    """Read sample names, barcodes from yaml into an OrderedDict."""
     samplesDict = collections.OrderedDict() # Does this line do anything?
     samplesDict = yaml.load(sample_file)
     return samplesDict
 
 def directory_of_samples_to_dict(directory):
+    """Read sample names from a directory of .gz files into an OrderedDict."""
     samplesDict = collections.OrderedDict()
     for gzfile in list_files(directory):
         # TODO(convert internal periods to underscore? use regex?)
@@ -125,9 +135,42 @@ def directory_of_samples_to_dict(directory):
     return samplesDict
 
 def list_files(folder, ext='gz'):
-    '''Return list of .gz files in specified folder'''
+    """Return list of .gz files in specified folder"""
     with cd(folder):
         return [f for f in glob.glob('*.{}'.format(ext))]
+
+def build_insertionDict(reads):
+    """
+    Return a dictionary of all insertions in a file
+
+    {barcode1:
+        {chrom_seq1: count,
+         chrom_seq2: count},
+     barcode2:
+        {chrom_seq1: count,
+         chrom_seq2: count}}
+    """
+    insertionDict = {}
+    for read in reads:
+        m = re.search('^([ACGT]{4})([NACGT][ACGT]{13,14}(?:TA))ACAGGTTG', read)
+        try:
+            barcode, chrom_seq = m.group(1), m.group(2)
+            try:
+                insertionDict.setdefault(barcode, {chrom_seq: 0})[chrom_seq] += 1
+            # insertionDict[barcode] exists but not {chrom_seq: ...} nested dict
+            except(KeyError):
+                insertionDict[barcode][chrom_seq] = 1
+        # no barcode/chrom_seq in the read
+        except:
+            pass
+    return insertionDict
+
+def yamldump(d, f):
+    """Write dictionary as yaml file f.yml"""
+    with open(d, 'w') as fo:
+        fo.write(yaml.dump(d, default_flow_style=False))
+
+
 
 def pipeline_organize(barcodes_present, samples, source=''):
 
@@ -307,8 +350,15 @@ def main():
         reads = os.path.abspath(reads)
         samplesDict = directory_of_samples_to_dict(samples)
 
+    # TODO(separate source paths -- if processing from one source file then just have that in one source dictionary? compared to processing many separate files?)
+    # TODO(sample paths -- maybe if sample paths are not in dict add defaults??)
+
+    # --- PROCESS INSEQ --- #
+
+
+
     # --- DEMULTIPLEX --- #
-    if samples:
+    if demultiplex:
         Settings.summaryDict['total reads'] = pipeline_demultiplex(reads)
 
     # --- BOWTIE MAPPING --- #

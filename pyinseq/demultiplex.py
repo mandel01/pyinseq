@@ -15,47 +15,6 @@ import sys
 from utils import convert_to_filename
 
 
-def sample_prep(sample_file, barcode_qc):
-    """
-    Return ordered dictionary of sample name and barcode for each sample.
-
-    samples = OrderedDict([('name1', {'name': 'name1', 'barcode': 'barcode1'}),
-        ('name2', {'name': 'name2', 'barcode': 'barcode2'})])
-    ignores comment lines in sample file that begin with #
-
-    Exit if duplicate sample names or barcodes are identified.
-    If barcode_qc=True, exit if duplicate barcodes are identified.
-    """
-    sampleDict = collections.OrderedDict()
-    with open(sample_file, 'r', newline='') as csvfile:
-        sampleReader = csv.reader(csvfile, delimiter='\t')
-        for line in sampleReader:
-            if not line[0].startswith('#'):
-                # sample into a string that can be a filename; barcode to uppercase
-                new_sample = convert_to_filename(line[0])
-                if new_sample in sampleDict:
-                    sys.stdout.write('Error: redundant sample identifier {}'.format(new_sample))
-                    exit(1)
-                try:
-                    new_barcode = line[1].upper()
-                except Exception:
-                    # Of for downstream only if samples are already demultiplexed
-                    new_barcode = ''
-                else:
-                    if barcode_qc:
-                        if new_barcode == '':
-                            sys.stdout.write('Missing barcode for sample {}'.format(new_sample))
-                            exit(1)
-                        if new_barcode in sampleDict.values():
-                            sys.stdout.write('Error: redundant barcode {}'.format(new_barcode))
-                            exit(1)
-                sampleDict[new_sample] = {
-                    'name': new_sample,
-                    'barcode': new_barcode
-                }
-    return sampleDict
-
-
 def demultiplex_fastq(fastq_file, samples_dict, experiment):
     """Demultiplex a fastq input file by 5' barcode into separate files."""
     barcodes_dict = {}
