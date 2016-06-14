@@ -7,7 +7,7 @@ import os
 from shutil import copyfile
 import sys
 import yaml
-from demultiplex import sample_prep, demultiplex_fastq, trim_fastq
+#from demultiplex import demultiplex_fastq, trim_fastq
 from gbkconvert import gbk2fna, gbk2ftt
 from mapReads import bowtieBuild, bowtieMap, parseBowtie
 from processMapping import mapSites, mapGenes, buildGeneTable
@@ -93,14 +93,41 @@ def set_disruption(d):
         d = 1.0
     return d
 
+def tab_delimited_samples_to_dict(sample_file):
+    """Return an ordered dictionary of sample names, barcodes from a tab-delimited file."""
+    samplesDict = collections.OrderedDict()
+    with open(sample_file, 'r', newline='') as csvfile:
+        for line in csv.reader(csvfile, delimiter='\t'):
+            if not line[0].startswith('#'): # ignore comment lines in original file
+                # sample > filename-acceptable string
+                # barcode > uppercase
+                sample = convert_to_filename(line[0])
+                barcode = line[1].upper()
+                if sample not in samplesDict and barcode not in samplesDict.values():
+                        samplesDict[sample] = {'barcode': barcode}
+                else:
+                    raise IOError('Error: duplicate sample {0} barcode {1}'.format(sample, barcode))
+    return samplesDict
+
+def yaml_samples_to_dict(sample_file):
+    """Not written yet"""
+    samplesDict = collections.OrderedDict() # Does this line do anything?
+    samplesDict = yaml.load(sample_file)
+    return samplesDict
+
+def directory_of_samples_to_dict(directory):
+    samplesDict = collections.OrderedDict()
+    for gzfile in list_files(directory):
+        # TODO(convert internal periods to underscore? use regex?)
+        # extract file name before any periods
+        f = (os.path.splitext(os.path.basename(gzfile))[0].split('.')[0])
+        samplesDict[f] = {}
+    return samplesDict
+
 def list_files(folder, ext='gz'):
     '''Return list of .gz files in specified folder'''
     with cd(folder):
         return [f for f in glob.glob('*.{}'.format(ext))]
-
-def count_reads_in_file():
-    pass
-
 
 def pipeline_organize(barcodes_present, samples, source=''):
 
@@ -251,37 +278,34 @@ def pipeline_analysis():
         fo.write(yaml.dump(Settings.summaryDict, default_flow_style=False))
 
 def main():
-    '''Start here.'''
     args = parseArgs(sys.argv[1:])
+
     # Set experiment name and related paths
     Settings.set_paths(args.experiment)
+
     # Keep intermediate files?
     Settings.keepall = args.keepall
 
     gbkfile = args.genome
     reads = args.input
-    samples = args.samples
-    # disruption
     disruption = set_disruption(float(args.disruption))
 
-    barcodes_present = not args.nobarcodes
     # Organism reference files called 'genome.fna' etc
     organism = 'genome'
 
-    # --- ORGANIZE SAMPLE LIST AND FILE PATHS --- #
-
-    ##### Current options - decide based on presence of `sample` #####
-    ## 1. One input file                     ## sample file TRUE, barcodes TRUE ##
-    ## 2. Separate input files w/o barcodes  ## sample file FALSE, barcodes FALSE ##
-
-    ## Future...
-    ## 3. Separate input files w/barcodes    ## sample file TRUE, barcodes TRUE ## >> need YAML or just scan folder
-
+    # sample names and paths
+    samples = args.samples
+    barcodes_present = not args.nobarcodes
+    ## ######
+    ## deal with barcode information
+    ## put this whole logic in a separate function
+    ##
+    ## ######
     if samples:
-        pipeline_organize(barcodes_present, samples)
+        samplesDict = tab_delimited_samples_to_dict(samples)
     else:
         reads = os.path.abspath(reads)
-        pipeline_organize(barcodes_present, False, reads)
+        samplesDict = directory_of_samples_to_dict(samples)
 
     # --- DEMULTIPLEX --- #
     if samples:
