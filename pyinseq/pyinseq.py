@@ -151,8 +151,16 @@ def build_insertionDict(reads):
          chrom_seq2: count}}
     """
     insertionDict = {}
+    pattern = re.compile("""
+    ^                               # beginning of string
+    ([ACGT]{4})                     # group(1) = barcode, any 4-bp of mixed ACGT
+    ([NACGT][ACGT]{13,14}(?:TA))    # group(2) = 16-17 bp of chromosomal sequence
+                                    # first bp can be N
+                                    # last two must be TA for transposon
+    ACAGGTTG                        # flanking transposon sequence
+    """, re.VERBOSE)
     for read in reads:
-        m = re.search('^([ACGT]{4})([NACGT][ACGT]{13,14}(?:TA))ACAGGTTG', read)
+        m = re.search(pattern, read)
         try:
             barcode, chrom_seq = m.group(1), m.group(2)
             try:
@@ -169,6 +177,18 @@ def yamldump(d, f):
     """Write dictionary as yaml file f.yml"""
     with open(d, 'w') as fo:
         fo.write(yaml.dump(d, default_flow_style=False))
+
+
+
+### Try doing the bowtie mapping with:
+###
+### yamldump a **SORTED** yaml of dictionaries for each real barcode and then
+### a yaml for all of the ones that are not part of any barcode?
+###
+### -c to pass a list of reads (sorted)
+### --suppress to suppress output. Or will I need the reads to map back b/c dictionaries unordered?
+
+
 
 
 
