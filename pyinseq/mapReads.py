@@ -14,7 +14,7 @@ def bowtieMap(organism, reads, bowtieOutput):
     '''Map fastq reads to a bowtie index.'''
     fna = organism + '.fna'
     # String version of the shell command
-    bashCommand = '{0} -m 1 --best --strata -a --fullref -n 1 -l 17 {1} -c {2} {3} -p 2' \
+    bashCommand = '{0} -m 1 --best --strata -a --fullref --suppress 1,6,7 -n 1 -l 17 {1} -c {2} {3} -p 2' \
         .format(config.bowtie, organism, reads, bowtieOutput)
     # Convert bash command to run properly - no spaces; instead list of entries
     # that will appear in the shell as space-separated
@@ -27,7 +27,7 @@ def bowtieMap(organism, reads, bowtieOutput):
 
 
 def parseBowtie(bowtieMessage):
-    '''Parse bowtie results into a dictionary.'''
+    '''Parse bowtie stdout summary messages into a dictionary.'''
     bowtie_msg_dict = {}
     for line in bowtieMessage.split('\n'):
         # extract counts from bowtie printing

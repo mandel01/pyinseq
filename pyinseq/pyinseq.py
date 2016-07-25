@@ -7,6 +7,7 @@ import csv
 import glob
 import logging
 import os
+import pandas as pd
 import regex as re
 import screed
 import sys
@@ -19,7 +20,7 @@ from processMapping import mapSites, mapGenes, buildGeneTable
 from utils import convert_to_filename, createExperimentDirectories
 # from demultiplex import demultiplex_fastq, trim_fastq
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -193,7 +194,7 @@ def extract_chromosome_sequence(fastq_file):
     return insertionDict
 
 
-def map_raw_reads(insertionDict, samplesDict, path, organism, genomeDir):
+def map_raw_reads(insertionDict, samplesDict, organism, genomeDir):
     '''
     Map sequences with bowtie.
 
@@ -225,11 +226,37 @@ def map_raw_reads(insertionDict, samplesDict, path, organism, genomeDir):
 
 
 def yamldump(d, f):
-    '''Write dictionary as yaml file f.yml'''
-    with open(d, 'w') as fo:
+    '''Write dictionary d as yaml file f.yml'''
+    with open(f + '.yml', 'w') as fo:
         fo.write(yaml.dump(d, default_flow_style=False))
 
+def process_bowtie_results(insertionDict, samplesDict, organism):
+    '''Read each bowtie result file into a dataframe, align with read data
 
+       For each results file (columns 1,6,7 suppressed):
+       - Read into a pandas dataframe
+       - Align to the insertion data (number of reads)
+       - Write to a csv/txt file
+       - Concatenate the results from all of the samples
+
+    '''
+    for sample in samplesDict:
+        bowtie_file = 'results/{experiment}/{sample}_bowtie.txt'.format(
+            experiment=path['experiment'],
+            sample=sample)
+
+
+        if samplesDict[sample]['barcode'] in insertionDict:
+            # for read in insertionDict[samplesDict[sample]['barcode']]:
+            # bowtie_in = list(insertionDict[samplesDict[sample]['barcode']].keys())
+            bowtie_in = ','.join([read for read in insertionDict[samplesDict[sample]['barcode']]])
+            logger.info('bowtie mapping for sample: {0}: {1}'.format(sample, samplesDict[sample]))
+            logger.debug('samples_for_bowtie_mapping: {0}'.format(bowtie_in))
+            bowtie_out = '../{0}_results_bowtie.txt'.format(sample)
+            # return the bowtie message for parsing and analysis
+            logger.debug('bowtie commands: {0}, {1}, {2}'.format(organism, bowtie_in, bowtie_out))
+            bowtie_msg_out = bowtieMap(organism, bowtie_in, bowtie_out)
+    # df_bowtie_results =
 
 ### Try doing the bowtie mapping with:
 ###
@@ -331,13 +358,13 @@ def pipeline_analysis():
           '\n*     Analysis     *'
           '\n====================\n')
 
-    # overwrite samples.yml with more data
+    # write samples.yml with data for each sample
     print('Writing file with summary data for each sample:\n  {}'.format(Settings.samples_yaml))
     print(yaml.dump(Settings.samplesDict, default_flow_style=False))
     with open(Settings.samples_yaml, 'w') as fo:
         fo.write(yaml.dump(Settings.samplesDict, default_flow_style=False))
 
-    # write summary.yml with more data
+    # write summary.yml with data for entire experiment
     print('Writing file with overall summary information:\n  {}'.format(Settings.summary_yaml))
     print(yaml.dump(Settings.summaryDict, default_flow_style=False))
     with open(Settings.summary_yaml, 'w') as fo:
@@ -377,10 +404,16 @@ def main():
     # --- PROCESS INSEQ --- #
     logger.info('Process INSeq samples')
     insertionDict = extract_chromosome_sequence(reads)
+    logger.info('Done making insertionDict')
+    # DEBUG:
+    yamldump(insertionDict,
+             'results/{experiment}/insertionDict'.format(experiment=path['experiment']))
     map_raw_reads(insertionDict, samplesDict, path, organism, genomeDir)
 
-    # --- PROCESS BOWTIE MAPPING --- #
+    # --- PROCESS BOWTIE MAPPINGS --- #
     logger.info('Process bowtie results')
+    process_bowtie_results(insertionDict, samplesDict, organism)
+
     # TODO(use pandas to integrate the sample-level results and bowtie results!!)
     # :)
 
@@ -396,7 +429,7 @@ def main():
     # --- ANALYSIS OF RESULTS --- #
     pipeline_analysis()
 
-    # --- CONFIRM COMPLETION --- #
+    # --- CONFIRM ETION --- #
     print('\n===================='
           '\n*       Done       *'
           '\n====================\n')

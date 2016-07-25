@@ -19,8 +19,8 @@ def mapSites(bowtieOutput):
         for line in fi:
             bowtiedata = line.rstrip().split('\t')
             # Calculate transposon insertion point = transposonNT
-            contig, insertionNT, readLength = str(bowtiedata[2]), int(bowtiedata[3]), len(bowtiedata[4])
-            if bowtiedata[1] == '+': # positive strand read
+            contig, insertionNT, readLength = str(bowtiedata[1]), int(bowtiedata[2]), len(bowtiedata[3])
+            if bowtiedata[0] == '+': # positive strand read
                 insertionNt = insertionNT + readLength - 1
                 mapDict.setdefault((contig,insertionNt),[0,0])[0] += 1   # Lcount
             else: # negative strand read
