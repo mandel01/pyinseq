@@ -7,42 +7,6 @@ Counts the bowtie hits at each position in each sample
 import csv
 import os
 
-def mapSites(bowtieOutput):
-    '''Map insertions to nucleotide sites.'''
-    # Placeholder for dictionary of mapped reads in format:
-    # {(contig, position) : [Lcount, Rcount]}
-    mapDict = {}
-    # overallTotal = denominator for cpm calculation
-    overallTotal = 0
-    cpm = 0
-    with open(bowtieOutput, 'r') as fi:
-        for line in fi:
-            bowtiedata = line.rstrip().split('\t')
-            # Calculate transposon insertion point = transposonNT
-            contig, insertionNT, readLength = str(bowtiedata[1]), int(bowtiedata[2]), len(bowtiedata[3])
-            if bowtiedata[0] == '+': # positive strand read
-                insertionNt = insertionNT + readLength - 1
-                mapDict.setdefault((contig,insertionNt),[0,0])[0] += 1   # Lcount
-            else: # negative strand read
-                insertionNt = insertionNT + 1
-                mapDict.setdefault((contig,insertionNt),[0,0])[1] += 1   # Rcount
-            overallTotal += 1
-    # write tab-delimited of contig/nucleotide/Lcount/Rcount/TotalCount/cpm
-    # use the index totalCounts as the denominator for cpm calculation
-    root, ext = os.path.splitext(bowtieOutput)
-    with open('{0}_mapped{1}'.format(root, ext), 'a') as fo:
-        writer = csv.writer(fo, delimiter='\t', dialect='excel')
-        header_entry = ('contig', 'nucleotide', 'left_counts', 'right_counts', 'total_counts', 'cpm')
-        writer.writerow(header_entry)
-        for insertion in sorted(mapDict):
-            Lcounts = mapDict[insertion][0]
-            Rcounts = mapDict[insertion][1]
-            totalCounts = mapDict[insertion][0] + mapDict[insertion][1]
-            cpm = float(1E6) * totalCounts / overallTotal
-            row_entry = (insertion[0], insertion[1], Lcounts, Rcounts, totalCounts, cpm)
-            writer.writerow(row_entry)
-    return mapDict
-
 def mapGenes(organism, sample, disruption, experiment=''):
     """
     Maps insertions to genes
