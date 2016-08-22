@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 import pytest
-from parse_csv import read_data
+from .parse_csv import read_data
 
 # Set up
+
 example01summary = read_data('results/example01/summary_gene_table.txt')
 
 def test_csv_read_headers():
@@ -21,7 +22,7 @@ def test_csv_row_without_transposon_hits():
     assert float(example01summary[19][11]) == 0
     assert float(example01summary[19][12]) == 0
 
-def test_csv_different_barcodes():
+def test_csv_with_different_data_in_different_barcoded_samples():
     assert example01summary[34][6] == 'thiE'
     assert float(example01summary[34][11]) == 5E4
     assert float(example01summary[34][12]) == 1E5

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import config  # config file
+import pyinseq.config # config file
 import re
 import subprocess
 
@@ -7,7 +7,7 @@ import subprocess
 def bowtieBuild(organism):
     '''Build a bowtie index given a fasta nucleotide file.'''
     fna = organism + '.fna'
-    subprocess.check_call([config.bowtieBuild, '-q', fna, organism])
+    subprocess.check_call([pyinseq.config.bowtieBuild, '-q', fna, organism])
 
 
 def bowtieMap(organism, reads, bowtieOutput):
@@ -15,7 +15,7 @@ def bowtieMap(organism, reads, bowtieOutput):
     fna = organism + '.fna'
     # String version of the shell command
     bashCommand = '{0} -m 1 --best --strata -a --fullref --suppress 1,6,7 -n 1 -l 17 {1} -c {2} {3} -p 2' \
-        .format(config.bowtie, organism, reads, bowtieOutput)
+        .format(pyinseq.config.bowtie, organism, reads, bowtieOutput)
     # Convert bash command to run properly - no spaces; instead list of entries
     # that will appear in the shell as space-separated
     proc = subprocess.Popen(bashCommand.split(' '), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)

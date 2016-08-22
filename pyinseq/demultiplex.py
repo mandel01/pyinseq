@@ -12,7 +12,7 @@ import csv
 import gzip
 import screed
 import sys
-from utils import convert_to_filename
+from .utils import convert_to_filename
 
 
 def demultiplex_fastq(fastq_file, samples_dict, experiment):

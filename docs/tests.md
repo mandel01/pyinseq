@@ -13,5 +13,5 @@ python pyinseq/pyinseq.py -i data/example/example01.fastq -s data/example/exampl
 Then run the tests:
 
 ```
-python -m pytest pyinseq/test/
+python -m pytest pyinseq/tests/
 ```

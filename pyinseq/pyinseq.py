@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 '''Main script for running the pyinseq package.'''
-
 import argparse
 import csv
 import glob
@@ -14,11 +13,10 @@ import sys
 import yaml
 from shutil import copyfile
 from collections import OrderedDict
-from gbkconvert import gbk2fna, gbk2ftt
-from mapReads import bowtieBuild, bowtieMap, parseBowtie
-from processMapping import mapGenes, buildGeneTable
-from utils import convert_to_filename, createExperimentDirectories
-# from demultiplex import demultiplex_fastq, trim_fastq
+from .gbkconvert import gbk2fna, gbk2ftt
+from .mapReads import bowtieBuild, bowtieMap, parseBowtie
+from .processMapping import mapGenes, buildGeneTable
+from .utils import convert_to_filename, createExperimentDirectories
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -317,9 +315,10 @@ def pipeline_analysis():
         fo.write(yaml.dump(Settings.summaryDict, default_flow_style=False))
 
 
-def main():
+def main(args):
     logger.info('Process command line arguments')
-    args = parseArgs(sys.argv[1:])
+    #print(sys.argv[1:])
+    args = parseArgs(args)
     # Initialize the settings object
     settings = Settings(args.experiment)
     # Keep intermediate files
