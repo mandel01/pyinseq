@@ -48,21 +48,3 @@ def test_tab_delimited_samples_to_dict_no_trailing_newline():
     s = 'pyinseq/tests/testdata/sample01_02.txt'
     assert pyinseq.tab_delimited_samples_to_dict(s) == \
         OrderedDict([('sample_1', {'barcode': 'AAAA'}), ('sample_2', {'barcode': 'TTTT'})])
-
-def test_process_bowtie_results():
-    '''Read each bowtie result file into a dataframe, align with read data
-
-       For each results file (columns 1,6,7 suppressed):
-       - Read into a pandas dataframe
-       - Align to the insertion data (number of reads)
-       - Write to a csv/txt file
-       - Concatenate the results from all of the samples
-
-    '''
-    # Setup
-    insertionDict = {}
-    samplesDict = {}
-    organism = 'organism'
-    df = pd.load_csv('summary_gene_table.txt')
-    # Run tests
-    assert process_bowtie_results(insertionDict, samplesDict, organism) == \
