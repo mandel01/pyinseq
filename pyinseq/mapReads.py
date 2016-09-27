@@ -4,18 +4,17 @@ import re
 import subprocess
 
 
-def bowtieBuild(organism):
+def bowtie_build(organism):
     '''Build a bowtie index given a fasta nucleotide file.'''
     fna = organism + '.fna'
     subprocess.check_call([pyinseq.config.bowtieBuild, '-q', fna, organism])
 
 
-def bowtieMap(organism, reads, bowtieOutput):
-    '''Map fastq reads to a bowtie index.'''
-    fna = organism + '.fna'
+def bowtie_map(genome_index_path, reads, bowtie_output):
+    '''Map comma-separated reads to a bowtie index.'''
     # String version of the shell command
     bashCommand = '{0} -m 1 --best --strata -a --fullref --suppress 1,6,7 -n 1 -l 17 {1} -c {2} {3} -p 2' \
-        .format(pyinseq.config.bowtie, organism, reads, bowtieOutput)
+        .format(pyinseq.config.bowtie, genome_index_path, reads, bowtie_output)
     # Convert bash command to run properly - no spaces; instead list of entries
     # that will appear in the shell as space-separated
     proc = subprocess.Popen(bashCommand.split(' '), stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -26,10 +25,10 @@ def bowtieMap(organism, reads, bowtieOutput):
     return bowtie_msg_out
 
 
-def parseBowtie(bowtieMessage):
+def parse_bowtie(bowtie_message):
     '''Parse bowtie stdout summary messages into a dictionary.'''
     bowtie_msg_dict = {}
-    for line in bowtieMessage.split('\n'):
+    for line in bowtie_message.split('\n'):
         # extract counts from bowtie printing
         m = re.search('^(\#.+:) (\d+)', line)
         try:

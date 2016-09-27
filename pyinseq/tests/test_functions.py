@@ -17,6 +17,11 @@ def test_filename_leading_whitespace():
 def test_filename_trailing_whitespace():
     assert pyinseq.utils.convert_to_filename('filename  ') == 'filename'
 
+def test_filename_funny_characters():
+    assert pyinseq.utils.convert_to_filename('filename*&*&*$$') == 'filename'
+    assert pyinseq.utils.convert_to_filename('file*&*&*$$name') == 'filename'
+
+
 # pyinseq.pyinseq
 
 def test_class_Settings_init():

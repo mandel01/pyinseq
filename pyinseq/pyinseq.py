@@ -14,11 +14,11 @@ import yaml
 from shutil import copyfile
 from collections import OrderedDict
 from .gbkconvert import gbk2fna, gbk2ftt
-from .mapReads import bowtieBuild, bowtieMap, parseBowtie
+from .mapReads import bowtie_build, bowtie_map, parse_bowtie
 from .processMapping import mapGenes, buildGeneTable
 from .utils import convert_to_filename, createExperimentDirectories
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -82,6 +82,7 @@ class Settings():
         self.experiment = convert_to_filename(experiment_name)
         self.path = 'results/{}/'.format(self.experiment)
         self.genome_path = self.path + 'genome_lookup/'
+        self.genome_index_path = self.path + 'genome_lookup/genome'
         self.raw_path = self.path + 'raw_data/'
         self.samples_yaml = self.path + 'samples.yml'
         self.summary_yaml = self.path + 'summary.yml'
@@ -189,7 +190,7 @@ def extract_chromosome_sequence(fastq_file):
     return insertionDict
 
 
-def map_raw_reads(insertionDict, samplesDict, organism, genomeDir):
+def map_raw_reads(settings, samplesDict, insertionDict):
     '''
     Map sequences with bowtie.
 
@@ -206,18 +207,14 @@ def map_raw_reads(insertionDict, samplesDict, organism, genomeDir):
         {chrom_seq1: count,
          chrom_seq2: count}}
     '''
-    with cd(genomeDir):
-        for sample in samplesDict:
-            if samplesDict[sample]['barcode'] in insertionDict:
-                # for read in insertionDict[samplesDict[sample]['barcode']]:
-                # bowtie_in = list(insertionDict[samplesDict[sample]['barcode']].keys())
-                bowtie_in = ','.join([read for read in insertionDict[samplesDict[sample]['barcode']]])
-                logger.info('bowtie mapping for sample: {0}: {1}'.format(sample, samplesDict[sample]))
-                logger.debug('samples_for_bowtie_mapping: {0}'.format(bowtie_in))
-                bowtie_out = '../{0}_results_bowtie.txt'.format(sample)
-                # return the bowtie message for parsing and analysis
-                logger.debug('bowtie commands: {0}, {1}, {2}'.format(organism, bowtie_in, bowtie_out))
-                bowtie_msg_out = bowtieMap(organism, bowtie_in, bowtie_out)
+    for sample in samplesDict:
+        barcode = samplesDict[sample]['barcode']
+        reads = ','.join(insertionDict[barcode].keys())
+        bowtie_output_file = settings.path + sample + '_bowtie.txt'
+        logger.info('bowtie mapping for sample: {0}: {1}'.format(sample, samplesDict[sample]))
+        logger.debug('reads for bowtie mapping: {0}'.format(reads))
+        logger.debug('bowtie_output_file: {0}'.format(bowtie_output_file))
+        bowtie_map(settings.genome_index_path, reads, bowtie_output_file)
 
 
 def yamldump(d, f):
@@ -244,41 +241,50 @@ def insertion_nucleotide(orientation, bowtie_nucleotide, read_length):
     return bowtie_nucleotide + read_length - 1 if orientation == '+' else bowtie_nucleotide + 1
 
 
-def process_bowtie_results(insertionDict, samplesDict, organism):
+def process_bowtie_results(insertionDict, samplesDict, organism, experiment):
     '''Read each bowtie result file into a dataframe, align with read data
 
-       For each results file (columns 1,6,7 suppressed):
+       For each bowtie results file (orientation, replication, nucleotide, sequence):
        - Read into a pandas dataframe
        - Align to the insertion data (number of reads)
        - Write to a csv/txt file
        - Concatenate the results from all of the samples
 
     '''
+    heads = ['orientation', 'contig', 'bowtie_nucleotide', 'sequence', 'mismatch']
+
+    # dataframe of mapped reads of all barcodes
+    df_insertions = pd.DataFrame.from_dict(insertionDict)
+    logger.debug('df_insertions\n{0}'.format(df_insertions))
+
     for sample in samplesDict:
-        bowtie_file = 'results/{experiment}/{sample}_bowtie.txt'.format(
-            experiment=sample['experiment'],
+        print('sample', sample)
+        bowtie_results_file = 'results/{experiment}/{sample}_bowtie.txt'.format(
+            experiment=experiment,
             sample=sample)
 
-        # initialize the dataframe of bowtie results
-        df_bt = '' #TODO(initialize with headers and no rows)
+        # dataframe of bowtie results
+        logger.debug('sample: {0}'.format(sample))
+        df_bt = pd.read_csv(bowtie_results_file, delimiter='\t', names=heads, usecols=[0, 1, 2, 3])
+        # Set DNA sequence as the same as the original submission (original or reverse complement)
+        df_bt['original_sequence'] = df_bt.apply(lambda row: original_sequence(row), axis=1)
+        df_bt['insertion_nucleotide'] = \
+            df_bt.apply(lambda row: insertion_nucleotide(row['orientation'],
+                                                         row['bowtie_nucleotide'],
+                                                         len(row['sequence'])), axis=1)
+        # index by the DNA sequence that will be found in the results file
+        df_bt_indexed = df_bt.set_index(['original_sequence'])
+        logger.debug('df_bt_indexed\n{0}'.format(df_bt_indexed))
 
-        if samplesDict[sample]['barcode'] in insertionDict:
-            # for read in insertionDict[samplesDict[sample]['barcode']]:
-            bowtie_in = ','.join([read for read in insertionDict[samplesDict[sample]['barcode']]])
-            logger.info('bowtie mapping for sample: {0}: {1}'.format(sample, samplesDict[sample]))
-            logger.debug('samples_for_bowtie_mapping: {0}'.format(bowtie_in))
-            bowtie_out = '../{0}_results_bowtie.txt'.format(sample)
-            # return the bowtie message for parsing and analysis
-            logger.debug('bowtie commands: {0}, {1}, {2}'.format(organism, bowtie_in, bowtie_out))
-            bowtie_msg_out = bowtieMap(organism, bowtie_in, bowtie_out)
+        # load bowtie results for the sample
+        barcode = samplesDict[sample]['barcode']
+        df_bt_sample = pd.concat([df_insertions[barcode],
+                                 df_bt_indexed[['contig', 'orientation', 'insertion_nucleotide']]],
+                                 axis=1, join='inner')
+        df_bt_summary = df_bt_sample.groupby(['contig', 'insertion_nucleotide', 'orientation']).sum().unstack()
+        logger.debug('df_bt_summary\n{0}'.format(df_bt_summary))
 
-            # NEED TO WRITE THIS!!
-            df_bt_sample = '' #TODO(get this samples bowtie results)
-
-            df_bt = '' #TODO(add this sample's results to the run's dataframe)
-
-    # or do this in a separate function?
-    df_insertionDict = ''
+        df_bt = '' #TODO(add this sample's results to the run's dataframe)
 
 
 def parse_genbank_setup_bowtie(gbkfile, organism, genomeDir, disruption):
@@ -292,7 +298,7 @@ def parse_genbank_setup_bowtie(gbkfile, organism, genomeDir, disruption):
     with cd(genomeDir):
         # TODO(pass settings object)
         logger.info('Building bowtie index files in {0}'.format('''need to pass settings.genome'''))
-        bowtieBuild(organism)
+        bowtie_build(organism)
 
 
 ### TODO(REDO Settings...) ###
@@ -317,7 +323,6 @@ def pipeline_analysis():
 
 def main(args):
     logger.info('Process command line arguments')
-    #print(sys.argv[1:])
     args = parseArgs(args)
     # Initialize the settings object
     settings = Settings(args.experiment)
@@ -351,12 +356,14 @@ def main(args):
     logger.debug('Done making insertionDict')
     # DEBUG:
     yamldump(insertionDict, settings.path + 'insertionDict')
-    map_raw_reads(insertionDict, samplesDict, organism, settings.genome_path)
-    exit()
+    # Map and output to separate files
+    map_raw_reads(settings, samplesDict, insertionDict)
+
 
     # --- PROCESS BOWTIE MAPPINGS --- #
     logger.info('Process bowtie results')
-    process_bowtie_results(insertionDict, samplesDict, organism)
+    process_bowtie_results(insertionDict, samplesDict, organism, settings.experiment)
+    exit()
 
     # TODO(use pandas to integrate the sample-level results and bowtie results!!)
     # :)
