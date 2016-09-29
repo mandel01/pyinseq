@@ -212,8 +212,8 @@ def map_raw_reads(settings, samplesDict, insertionDict):
         reads = ','.join(insertionDict[barcode].keys())
         bowtie_output_file = settings.path + sample + '_bowtie.txt'
         logger.info('bowtie mapping for sample: {0}: {1}'.format(sample, samplesDict[sample]))
-        logger.debug('reads for bowtie mapping: {0}'.format(reads))
-        logger.debug('bowtie_output_file: {0}'.format(bowtie_output_file))
+        # logger.debug('reads for bowtie mapping: {0}'.format(reads))
+        # logger.debug('bowtie_output_file: {0}'.format(bowtie_output_file))
         bowtie_map(settings.genome_index_path, reads, bowtie_output_file)
 
 
@@ -221,6 +221,12 @@ def yamldump(d, f):
     '''Write dictionary d as yaml file f.yml'''
     with open(f + '.yml', 'w') as fo:
         fo.write(yaml.dump(d, default_flow_style=False))
+
+
+def write_individual_barcode_dictionaries(insertionDict, samplesDict, settings):
+    for sample in samplesDict:
+        barcode = samplesDict[sample]['barcode']
+        yamldump(insertionDict[barcode], settings.path + sample + '_insertion_counts')
 
 
 def reverse_complement(sequence):
@@ -237,11 +243,13 @@ def original_sequence(row):
 
 
 def insertion_nucleotide(orientation, bowtie_nucleotide, read_length):
-    '''Given bowtie mapping data provide the tranposon insertion nucleotide'''
+    '''Given bowtie mapping data provide the transposon insertion nucleotide'''
     return bowtie_nucleotide + read_length - 1 if orientation == '+' else bowtie_nucleotide + 1
 
 
-def process_bowtie_results(insertionDict, samplesDict, organism, experiment):
+def process_bowtie_results(settings, samplesDict, insertionDict):
+    ### EARLIER WRITE THE INSERTIONS DICTIONARY INTO EACH SAMPLE (NOT BARCODE)
+    ### CYCLE THROUGH EACH BOWTIE FILE AND EACH INSERTION FILE
     '''Read each bowtie result file into a dataframe, align with read data
 
        For each bowtie results file (orientation, replication, nucleotide, sequence):
@@ -257,10 +265,15 @@ def process_bowtie_results(insertionDict, samplesDict, organism, experiment):
     df_insertions = pd.DataFrame.from_dict(insertionDict)
     logger.debug('df_insertions\n{0}'.format(df_insertions))
 
+    # results for all of the samples
+    df_results = ''
+    site_orientation = ['contig', 'insertion_nucleotide', 'orientation']
+    barcode_list = []
+
     for sample in samplesDict:
         print('sample', sample)
         bowtie_results_file = 'results/{experiment}/{sample}_bowtie.txt'.format(
-            experiment=experiment,
+            experiment=settings.experiment,
             sample=sample)
 
         # dataframe of bowtie results
@@ -279,12 +292,24 @@ def process_bowtie_results(insertionDict, samplesDict, organism, experiment):
         # load bowtie results for the sample
         barcode = samplesDict[sample]['barcode']
         df_bt_sample = pd.concat([df_insertions[barcode],
-                                 df_bt_indexed[['contig', 'orientation', 'insertion_nucleotide']]],
+                                 df_bt_indexed[site_orientation]],
                                  axis=1, join='inner')
-        df_bt_summary = df_bt_sample.groupby(['contig', 'insertion_nucleotide', 'orientation']).sum().unstack()
-        logger.debug('df_bt_summary\n{0}'.format(df_bt_summary))
+        logger.debug('df_bt_sample\n{0}'.format(df_bt_sample))
 
-        df_bt = '' #TODO(add this sample's results to the run's dataframe)
+        #df_bt_summary = df_bt_sample.groupby(site_orientation).sum().unstack()
+        #df_bt_summary.to_csv(settings.path + sample + '.csv', sep='\t')
+        #logger.debug('df_bt_summary\n{0}'.format(df_bt_summary))
+
+        # add this sample's results to the results df
+
+        if not isinstance(df_results, pd.DataFrame):
+            df_results = df_bt_sample.reset_index()
+        else:
+            df_results = pd.concat([df_results, df_bt_sample])
+
+        barcode_list.append(barcode)
+        logger.debug('barcode_list: {0}'.format(barcode_list))
+    logger.debug('df_results\n{0}'.format(df_results))
 
 
 def parse_genbank_setup_bowtie(gbkfile, organism, genomeDir, disruption):
@@ -353,16 +378,14 @@ def main(args):
     # --- IDENTIFY CHROMOSOME SEQUENCES AND MAP WITH BOWTIE --- #
     logger.info('Process INSeq samples')
     insertionDict = extract_chromosome_sequence(reads)
-    logger.debug('Done making insertionDict')
-    # DEBUG:
-    yamldump(insertionDict, settings.path + 'insertionDict')
-    # Map and output to separate files
+    logger.info('Writing insertion count files')
+    write_individual_barcode_dictionaries(insertionDict, samplesDict, settings)
+    logger.info('Mapping with bowtie')
     map_raw_reads(settings, samplesDict, insertionDict)
-
 
     # --- PROCESS BOWTIE MAPPINGS --- #
     logger.info('Process bowtie results')
-    process_bowtie_results(insertionDict, samplesDict, organism, settings.experiment)
+    process_bowtie_results(settings, samplesDict, insertionDict)
     exit()
 
     # TODO(use pandas to integrate the sample-level results and bowtie results!!)
