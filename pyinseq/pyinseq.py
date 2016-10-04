@@ -130,8 +130,8 @@ def tab_delimited_samples_to_dict(sample_file):
 
 def yaml_samples_to_dict(sample_file):
     '''Read sample names, barcodes from yaml into an OrderedDict.'''
-    samplesDict = OrderedDict()  # Does this line do anything?
-    samplesDict = yaml.load(sample_file)
+    with open(sample_file, 'r') as f:
+        samplesDict = yaml.load(sample_file)
     return samplesDict
 
 
@@ -223,10 +223,21 @@ def yamldump(d, f):
         fo.write(yaml.dump(d, default_flow_style=False))
 
 
-def write_individual_barcode_dictionaries(insertionDict, samplesDict, settings):
+def write_individual_insertion_count_dictionaries(insertionDict, samplesDict, settings):
+    '''Write all insertion counts to individual yaml files'''
     for sample in samplesDict:
         barcode = samplesDict[sample]['barcode']
         yamldump(insertionDict[barcode], settings.path + sample + '_insertion_counts')
+
+
+def read_individual_insertion_count_dictionary(sample, settings):
+    '''Return pandas dataframe of insertion counts from one yaml file'''
+    insertion_count_file = settings.path + sample + '_insertion_counts.yml'
+    with open(insertion_count_file, 'r') as f:
+        insertion_counts = yaml.load(f)
+    df_insertion_counts = pd.DataFrame.from_records(insertion_counts, index=['counts']).transpose()
+    df_insertion_counts['sample'] = sample
+    return df_insertion_counts
 
 
 def reverse_complement(sequence):
@@ -277,7 +288,6 @@ def process_bowtie_results(settings, samplesDict, insertionDict):
             sample=sample)
 
         # dataframe of bowtie results
-        logger.debug('sample: {0}'.format(sample))
         df_bt = pd.read_csv(bowtie_results_file, delimiter='\t', names=heads, usecols=[0, 1, 2, 3])
         # Set DNA sequence as the same as the original submission (original or reverse complement)
         df_bt['original_sequence'] = df_bt.apply(lambda row: original_sequence(row), axis=1)
@@ -286,15 +296,22 @@ def process_bowtie_results(settings, samplesDict, insertionDict):
                                                          row['bowtie_nucleotide'],
                                                          len(row['sequence'])), axis=1)
         # index by the DNA sequence that will be found in the results file
-        df_bt_indexed = df_bt.set_index(['original_sequence'])
-        logger.debug('df_bt_indexed\n{0}'.format(df_bt_indexed))
+        df_bowtie_results_indexed = df_bt.set_index(['original_sequence'])
+
+        df_insertion_counts = read_individual_insertion_count_dictionary(sample, settings)
 
         # load bowtie results for the sample
-        barcode = samplesDict[sample]['barcode']
-        df_bt_sample = pd.concat([df_insertions[barcode],
-                                 df_bt_indexed[site_orientation]],
-                                 axis=1, join='inner')
-        logger.debug('df_bt_sample\n{0}'.format(df_bt_sample))
+        df_sample = pd.concat([df_insertion_counts[['sample', 'counts']],
+                               df_bowtie_results_indexed[['contig', 'orientation', 'insertion_nucleotide']]],
+                              axis=1, join='inner')
+
+        sites_summary_file = 'results/{experiment}/{sample}_sites.txt'.format(
+            experiment=settings.experiment,
+            sample=sample)
+
+        df_sample.groupby(['contig', 'insertion_nucleotide', 'sample',
+                           'orientation']).sum().unstack(level=['sample', 'orientation']).\
+                           to_csv(sites_summary_file, sep='\t')
 
         #df_bt_summary = df_bt_sample.groupby(site_orientation).sum().unstack()
         #df_bt_summary.to_csv(settings.path + sample + '.csv', sep='\t')
@@ -302,15 +319,10 @@ def process_bowtie_results(settings, samplesDict, insertionDict):
 
         # add this sample's results to the results df
 
-        if not isinstance(df_results, pd.DataFrame):
-            df_results = df_bt_sample.reset_index()
-        else:
-            df_results = pd.concat([df_results, df_bt_sample])
-
-        barcode_list.append(barcode)
-        logger.debug('barcode_list: {0}'.format(barcode_list))
-    logger.debug('df_results\n{0}'.format(df_results))
-
+        #if not isinstance(df_results, pd.DataFrame):
+        #    df_results = df_bt_sample.reset_index()
+        #else:
+        #    df_results = pd.concat([df_results, df_bt_sample])
 
 def parse_genbank_setup_bowtie(gbkfile, organism, genomeDir, disruption):
     logger.info('Preparing nucleotide fasta file from GenBank file to use in bowtie mapping.\n' \
@@ -326,7 +338,6 @@ def parse_genbank_setup_bowtie(gbkfile, organism, genomeDir, disruption):
         bowtie_build(organism)
 
 
-### TODO(REDO Settings...) ###
 def pipeline_analysis():
 
     print('\n===================='
@@ -379,7 +390,7 @@ def main(args):
     logger.info('Process INSeq samples')
     insertionDict = extract_chromosome_sequence(reads)
     logger.info('Writing insertion count files')
-    write_individual_barcode_dictionaries(insertionDict, samplesDict, settings)
+    write_individual_insertion_count_dictionaries(insertionDict, samplesDict, settings)
     logger.info('Mapping with bowtie')
     map_raw_reads(settings, samplesDict, insertionDict)
 
