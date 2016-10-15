@@ -53,3 +53,22 @@ def test_tab_delimited_samples_to_dict_no_trailing_newline():
     s = 'pyinseq/tests/testdata/sample01_02.txt'
     assert pyinseq.tab_delimited_samples_to_dict(s) == \
         OrderedDict([('sample_1', {'barcode': 'AAAA'}), ('sample_2', {'barcode': 'TTTT'})])
+
+def test_tab_delimited_samples_to_dict_no_trailing_newline():
+    #s = StringIO('sample_1\tAAAA\tsample_2\tTTTT\n')
+    s = 'pyinseq/tests/testdata/sample01_02.txt'
+    assert pyinseq.tab_delimited_samples_to_dict(s) == \
+        OrderedDict([('sample_1', {'barcode': 'AAAA'}), ('sample_2', {'barcode': 'TTTT'})])
+
+'''def test_map_counted_insertions_to_genes():
+    df_sample = pd.DataFrame({'chromosome': [1, 1, 1, 1],
+                              'insertion_nucleotide': [140, 180, 250, 500],
+                              'count': [14, 600, 1000, 700]})
+    df_genome_ftt = pd.DataFrame({'chromosome': [1, 1, 1, 2],
+                                  'start': [100, 300, 500, 100],
+                                  'end': [200, 600, 900, 250]})
+    assert pyinseq.map_counted_insertions_to_genes(df_sample, df_genome_ftt).equals(
+        pd.DataFrame({'sample_name': {(1, 100, 200): 614,
+                                      (1, 300, 600): 700,
+                                      (1, 500, 900): 700,
+                                      (2, 100, 250): 0}}))'''

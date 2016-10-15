@@ -6,6 +6,7 @@ import csv
 import glob
 import logging
 import os
+import numpy as np
 import pandas as pd
 import regex as re
 import screed
@@ -18,7 +19,7 @@ from .mapReads import bowtie_build, bowtie_map, parse_bowtie
 from .processMapping import mapGenes, buildGeneTable
 from .utils import convert_to_filename, createExperimentDirectories
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -240,6 +241,28 @@ def read_individual_insertion_count_dictionary(sample, settings):
     return df_insertion_counts
 
 
+def write_sites_files(dataframe_object, output_file):
+    df = dataframe_object.groupby(['contig', 'insertion_nucleotide', 'sample',
+                             'orientation']).sum().unstack(level=['sample', 'orientation'])
+    # join the first ('counts') and third ('+' or '-') column header value
+    df.columns = [''.join(col[::2]) for col in df.columns.values]
+    df.to_csv(output_file, sep='\t')
+
+
+def read_sites_file(sample, settings):
+    '''Return pandas dataframe of insertion counts'''
+    df = pd.read_csv(settings.path + sample + '_sites.txt', sep='\t')
+    return df
+
+
+def write_genes_file(dataframe_object, output_file):
+    df = dataframe_object.groupby(['contig', 'insertion_nucleotide', 'sample',
+                             'orientation']).sum().unstack(level=['sample', 'orientation'])
+    # join the first ('counts') and third ('+' or '-') column header value
+    df.columns = [''.join(col[::2]) for col in df.columns.values]
+    df.to_csv(output_file, sep='\t')
+
+
 def reverse_complement(sequence):
     '''Return the DNA Reverse Complement'''
     complement = ''.maketrans('GATCRYSWKMBVDHN', 'CTAGYRSWMKVBHDN')
@@ -258,9 +281,14 @@ def insertion_nucleotide(orientation, bowtie_nucleotide, read_length):
     return bowtie_nucleotide + read_length - 1 if orientation == '+' else bowtie_nucleotide + 1
 
 
+def normalize_counts_per_million(df_sites):
+    '''Normalize plus, minus, and total sites all to total sites and multiply by a million'''
+    cpm = lambda x: 1E6 * x / df_sites['total'].sum()
+    df_sites[['counts+', 'counts-', 'total']] = df_sites[['plus', 'minus', 'total']].applymap(cpm)
+    return df_sites
+
+
 def process_bowtie_results(settings, samplesDict, insertionDict):
-    ### EARLIER WRITE THE INSERTIONS DICTIONARY INTO EACH SAMPLE (NOT BARCODE)
-    ### CYCLE THROUGH EACH BOWTIE FILE AND EACH INSERTION FILE
     '''Read each bowtie result file into a dataframe, align with read data
 
        For each bowtie results file (orientation, replication, nucleotide, sequence):
@@ -277,12 +305,10 @@ def process_bowtie_results(settings, samplesDict, insertionDict):
     logger.debug('df_insertions\n{0}'.format(df_insertions))
 
     # results for all of the samples
-    df_results = ''
-    site_orientation = ['contig', 'insertion_nucleotide', 'orientation']
-    barcode_list = []
+    df_experiment_sites = ''
 
     for sample in samplesDict:
-        print('sample', sample)
+        # ### MAP TO SITES ### #
         bowtie_results_file = 'results/{experiment}/{sample}_bowtie.txt'.format(
             experiment=settings.experiment,
             sample=sample)
@@ -297,34 +323,58 @@ def process_bowtie_results(settings, samplesDict, insertionDict):
                                                          len(row['sequence'])), axis=1)
         # index by the DNA sequence that will be found in the results file
         df_bowtie_results_indexed = df_bt.set_index(['original_sequence'])
-
         df_insertion_counts = read_individual_insertion_count_dictionary(sample, settings)
-
         # load bowtie results for the sample
-        df_sample = pd.concat([df_insertion_counts[['sample', 'counts']],
-                               df_bowtie_results_indexed[['contig', 'orientation', 'insertion_nucleotide']]],
-                              axis=1, join='inner')
+        df_sites = pd.concat([df_insertion_counts[['sample', 'counts']],
+                              df_bowtie_results_indexed[['contig', 'orientation', 'insertion_nucleotide']]],
+                             axis=1, join='inner')
 
         sites_summary_file = 'results/{experiment}/{sample}_sites.txt'.format(
             experiment=settings.experiment,
             sample=sample)
+        # Write the sites file as tab-delimited csv
+        write_sites_files(df_sites, sites_summary_file)
 
-        df_sample.groupby(['contig', 'insertion_nucleotide', 'sample',
-                           'orientation']).sum().unstack(level=['sample', 'orientation']).\
-                           to_csv(sites_summary_file, sep='\t')
-
-        #df_bt_summary = df_bt_sample.groupby(site_orientation).sum().unstack()
-        #df_bt_summary.to_csv(settings.path + sample + '.csv', sep='\t')
-        #logger.debug('df_bt_summary\n{0}'.format(df_bt_summary))
-
-        # add this sample's results to the results df
-
-        #if not isinstance(df_results, pd.DataFrame):
-        #    df_results = df_bt_sample.reset_index()
+        # Aggregate the sites data
+        #if not isinstance(df_experiment_sites, pd.DataFrame):
+        #    df_experiment_sites = df_sample_sites.reset_index()
         #else:
-        #    df_results = pd.concat([df_results, df_bt_sample])
+        #    df_experiment_sites = pd.concat([df_experiment_sites, df_sample_sites])
 
-def parse_genbank_setup_bowtie(gbkfile, organism, genomeDir, disruption):
+    # Write the sites file as tab-delimited csv
+    #all_sites_file = 'results/{experiment}/all_sites.txt'.format(
+    #    experiment=settings.experiment)
+    #write_sites_files(df_experiment_sites, all_sites_file)
+
+
+def process_gene_counts(settings, samplesDict):
+    '''Loop through all samples and map to genes'''
+    # Load genome features (.ftt) as dataframe
+    df_ftt = pd.read_csv(settings.genome_index_path + '.ftt', sep='\t')
+    # Loop through sample files
+    for sample in samplesDict:
+        genes_summary_file = 'results/{experiment}/{sample}_genes.txt'.format(
+            experiment=settings.experiment,
+            sample=sample)
+        df_sites = read_sites_file(sample, settings)
+        map_counted_insertions_to_genes(df_sites, df_ftt, sample, genes_summary_file)
+
+def map_counted_insertions_to_genes(df_sites, df_ftt, sample, genes_summary_file):
+    '''Map insertions in df_sample to the genes in df_genome_ftt
+       Insertions in multiple genes get counted in both.
+    '''
+    df_sites['total'] = df_sites['counts+'] + df_sites['counts-']
+    df_sites.columns = ['Locus', 'nt', 'plus', 'minus', 'total']
+    df_merged = df_ftt.merge(normalize_counts_per_million(df_sites), on=['Locus'], how='left')
+    df_merged['count'] = df_merged.apply(lambda x: x['total'] if x['Location_Start'] <= x['nt'] <= x['Location_End'] else 0, axis=1)
+    df_aggregate = df_merged[list(df_ftt.columns) + ['count']].groupby(list(df_ftt.columns)).sum()
+    df_aggregate_resorted = df_aggregate.sort_index(level=list(df_ftt.columns))
+    df_aggregate_resorted.columns = [sample]
+    df_aggregate_resorted.to_csv(genes_summary_file, sep='\t')
+    return df_aggregate_resorted
+
+
+def parse_genbank_setup_bowtie(gbkfile, organism, genomeDir):
     logger.info('Preparing nucleotide fasta file from GenBank file to use in bowtie mapping.\n' \
         '  GenBank source file: {}'.format(gbkfile))
     gbk2fna(gbkfile, organism, genomeDir)
@@ -384,7 +434,7 @@ def main(args):
     # put 'organism' in summaryDict
 
     # --- SET UP BOWTIE --- #
-    parse_genbank_setup_bowtie(gbkfile, organism, settings.genome_path, disruption)
+    parse_genbank_setup_bowtie(gbkfile, organism, settings.genome_path)
 
     # --- IDENTIFY CHROMOSOME SEQUENCES AND MAP WITH BOWTIE --- #
     logger.info('Process INSeq samples')
@@ -397,13 +447,9 @@ def main(args):
     # --- PROCESS BOWTIE MAPPINGS --- #
     logger.info('Process bowtie results')
     process_bowtie_results(settings, samplesDict, insertionDict)
+    logger.info('Map to genes')
+    process_gene_counts(settings, samplesDict)
     exit()
-
-    # TODO(use pandas to integrate the sample-level results and bowtie results!!)
-    # :)
-
-
-    # --- BOWTIE MAPPING --- #
 
     ### TODO(REDO Settings...) ###
     if not samples:

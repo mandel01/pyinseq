@@ -9,8 +9,8 @@ example01summary = read_data('results/example01/summary_gene_table.txt')
 def test_csv_read_headers():
     # data = read_data('results/example01/summary_gene_table.txt')
     assert example01summary[0] == ['Contig', 'Start', 'End', 'Strand', 'Length',
-                            'PID', 'Gene', 'Synonym', 'Code', 'COG',
-                            'Product', 'E001_01', 'E001_02']
+                                   'PID', 'Gene', 'Synonym', 'Code', 'COG',
+                                   'Product', 'E001_01', 'E001_02']
 
 def test_csv_row_with_transposon_hits():
     assert example01summary[12][6] == 'gyrB'
