@@ -335,29 +335,29 @@ def process_bowtie_results(settings, samplesDict, insertionDict):
         # Write the sites file as tab-delimited csv
         write_sites_files(df_sites, sites_summary_file)
 
-        # Aggregate the sites data
-        #if not isinstance(df_experiment_sites, pd.DataFrame):
-        #    df_experiment_sites = df_sample_sites.reset_index()
-        #else:
-        #    df_experiment_sites = pd.concat([df_experiment_sites, df_sample_sites])
-
-    # Write the sites file as tab-delimited csv
-    #all_sites_file = 'results/{experiment}/all_sites.txt'.format(
-    #    experiment=settings.experiment)
-    #write_sites_files(df_experiment_sites, all_sites_file)
-
 
 def process_gene_counts(settings, samplesDict):
     '''Loop through all samples and map to genes'''
     # Load genome features (.ftt) as dataframe
     df_ftt = pd.read_csv(settings.genome_index_path + '.ftt', sep='\t')
+    df_all_samples = ''
+    genes_all_summary_file = 'results/{experiment}/summary_gene_table.txt'.format(
+        experiment=settings.experiment)
     # Loop through sample files
     for sample in samplesDict:
         genes_summary_file = 'results/{experiment}/{sample}_genes.txt'.format(
             experiment=settings.experiment,
             sample=sample)
         df_sites = read_sites_file(sample, settings)
-        map_counted_insertions_to_genes(df_sites, df_ftt, sample, genes_summary_file)
+        df_sample = map_counted_insertions_to_genes(df_sites, df_ftt, sample, genes_summary_file)
+        # Aggregate genes data
+        if not isinstance(df_all_samples, pd.DataFrame):
+            df_all_samples = df_sample.copy()
+        else:
+            df_all_samples = df_all_samples.merge(df_sample, left_index=True, right_index=True, how='left')
+    # Write all samples
+    df_all_samples.to_csv(genes_all_summary_file, sep='\t')
+
 
 def map_counted_insertions_to_genes(df_sites, df_ftt, sample, genes_summary_file):
     '''Map insertions in df_sample to the genes in df_genome_ftt
@@ -369,6 +369,8 @@ def map_counted_insertions_to_genes(df_sites, df_ftt, sample, genes_summary_file
     df_merged['count'] = df_merged.apply(lambda x: x['total'] if x['Location_Start'] <= x['nt'] <= x['Location_End'] else 0, axis=1)
     df_aggregate = df_merged[list(df_ftt.columns) + ['count']].groupby(list(df_ftt.columns)).sum()
     df_aggregate_resorted = df_aggregate.sort_index(level=list(df_ftt.columns))
+    df_aggregate_resorted.index.names = ['Contig', 'Start', 'End', 'Strand', 'Length', 'PID',
+                                         'Gene', 'Synonym', 'Code', 'COG', 'Product']
     df_aggregate_resorted.columns = [sample]
     df_aggregate_resorted.to_csv(genes_summary_file, sep='\t')
     return df_aggregate_resorted
