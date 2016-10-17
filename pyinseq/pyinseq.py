@@ -243,8 +243,8 @@ def read_individual_insertion_count_dictionary(sample, settings):
 
 def write_sites_files(dataframe_object, output_file):
     df = dataframe_object.groupby(['contig', 'insertion_nucleotide', 'sample',
-                             'orientation']).sum().unstack(level=['sample', 'orientation'])
-    # join the first ('counts') and third ('+' or '-') column header value
+                                   'orientation']).sum().unstack(level=['sample', 'orientation'])
+    # join the first ('counts') and third ('+' or '-') column header values
     df.columns = [''.join(col[::2]) for col in df.columns.values]
     df.to_csv(output_file, sep='\t')
 
@@ -253,14 +253,6 @@ def read_sites_file(sample, settings):
     '''Return pandas dataframe of insertion counts'''
     df = pd.read_csv(settings.path + sample + '_sites.txt', sep='\t')
     return df
-
-
-def write_genes_file(dataframe_object, output_file):
-    df = dataframe_object.groupby(['contig', 'insertion_nucleotide', 'sample',
-                             'orientation']).sum().unstack(level=['sample', 'orientation'])
-    # join the first ('counts') and third ('+' or '-') column header value
-    df.columns = [''.join(col[::2]) for col in df.columns.values]
-    df.to_csv(output_file, sep='\t')
 
 
 def reverse_complement(sequence):
@@ -305,7 +297,9 @@ def process_bowtie_results(settings, samplesDict, insertionDict):
     logger.debug('df_insertions\n{0}'.format(df_insertions))
 
     # results for all of the samples
-    df_experiment_sites = ''
+    df_all_samples = ''
+    summary_sites_table = 'results/{experiment}/summary_sites_table.txt'.format(
+        experiment=settings.experiment)
 
     for sample in samplesDict:
         # ### MAP TO SITES ### #
@@ -325,7 +319,7 @@ def process_bowtie_results(settings, samplesDict, insertionDict):
         df_bowtie_results_indexed = df_bt.set_index(['original_sequence'])
         df_insertion_counts = read_individual_insertion_count_dictionary(sample, settings)
         # load bowtie results for the sample
-        df_sites = pd.concat([df_insertion_counts[['sample', 'counts']],
+        df_sample = pd.concat([df_insertion_counts[['sample', 'counts']],
                               df_bowtie_results_indexed[['contig', 'orientation', 'insertion_nucleotide']]],
                              axis=1, join='inner')
 
@@ -333,15 +327,22 @@ def process_bowtie_results(settings, samplesDict, insertionDict):
             experiment=settings.experiment,
             sample=sample)
         # Write the sites file as tab-delimited csv
-        write_sites_files(df_sites, sites_summary_file)
+        write_sites_files(df_sample, sites_summary_file)
+        # Aggregate sites data
+        if not isinstance(df_all_samples, pd.DataFrame):
+            df_all_samples = df_sample.copy()
+        else:
+            df_all_samples = df_all_samples.merge(df_sample, left_index=True, right_index=True, how='left')
+    # Write all samples
+    df_all_samples.to_csv(summary_sites_table, sep='\t')
 
 
-def process_gene_counts(settings, samplesDict):
+def process_gene_counts(settings, samplesDict, disruption):
     '''Loop through all samples and map to genes'''
     # Load genome features (.ftt) as dataframe
     df_ftt = pd.read_csv(settings.genome_index_path + '.ftt', sep='\t')
     df_all_samples = ''
-    genes_all_summary_file = 'results/{experiment}/summary_gene_table.txt'.format(
+    summary_genes_table = 'results/{experiment}/summary_gene_table.txt'.format(
         experiment=settings.experiment)
     # Loop through sample files
     for sample in samplesDict:
@@ -349,24 +350,25 @@ def process_gene_counts(settings, samplesDict):
             experiment=settings.experiment,
             sample=sample)
         df_sites = read_sites_file(sample, settings)
-        df_sample = map_counted_insertions_to_genes(df_sites, df_ftt, sample, genes_summary_file)
+        df_sample = map_counted_insertions_to_genes(df_sites, df_ftt, sample, genes_summary_file, disruption)
         # Aggregate genes data
         if not isinstance(df_all_samples, pd.DataFrame):
             df_all_samples = df_sample.copy()
         else:
             df_all_samples = df_all_samples.merge(df_sample, left_index=True, right_index=True, how='left')
     # Write all samples
-    df_all_samples.to_csv(genes_all_summary_file, sep='\t')
+    df_all_samples.to_csv(summary_genes_table, sep='\t')
 
 
-def map_counted_insertions_to_genes(df_sites, df_ftt, sample, genes_summary_file):
+def map_counted_insertions_to_genes(df_sites, df_ftt, sample, genes_summary_file, disruption):
     '''Map insertions in df_sample to the genes in df_genome_ftt
        Insertions in multiple genes get counted in both.
     '''
     df_sites['total'] = df_sites['counts+'] + df_sites['counts-']
     df_sites.columns = ['Locus', 'nt', 'plus', 'minus', 'total']
     df_merged = df_ftt.merge(normalize_counts_per_million(df_sites), on=['Locus'], how='left')
-    df_merged['count'] = df_merged.apply(lambda x: x['total'] if x['Location_Start'] <= x['nt'] <= x['Location_End'] else 0, axis=1)
+    df_merged['count'] = df_merged.apply(lambda x: x['total'] if insertion_falls_in_gene(
+        x['Location_Start'], x['Location_End'], x['Strand'], x['nt'], disruption) else 0, axis=1)
     df_aggregate = df_merged[list(df_ftt.columns) + ['count']].groupby(list(df_ftt.columns)).sum()
     df_aggregate_resorted = df_aggregate.sort_index(level=list(df_ftt.columns))
     df_aggregate_resorted.index.names = ['Contig', 'Start', 'End', 'Strand', 'Length', 'PID',
@@ -374,6 +376,19 @@ def map_counted_insertions_to_genes(df_sites, df_ftt, sample, genes_summary_file
     df_aggregate_resorted.columns = [sample]
     df_aggregate_resorted.to_csv(genes_summary_file, sep='\t')
     return df_aggregate_resorted
+
+
+def insertion_falls_in_gene(start, end, strand, insertion, disruption):
+    '''return True if the insertion disrupts the 5'-end of the gene defined by disruption (0.0-1.0)'''
+    if insertion >= start:
+        if insertion <= end:
+            # 0.0 = 5'end ; 1.0 = 3'end
+            # TODO(Should featureEnd have +1 added?)
+            if strand == '+':
+                three_primeness = (insertion - start) / (end - start)
+            if strand == '-':
+                three_primeness = (end - insertion) / (end - start)
+            return three_primeness <= disruption
 
 
 def parse_genbank_setup_bowtie(gbkfile, organism, genomeDir):
@@ -450,7 +465,7 @@ def main(args):
     logger.info('Process bowtie results')
     process_bowtie_results(settings, samplesDict, insertionDict)
     logger.info('Map to genes')
-    process_gene_counts(settings, samplesDict)
+    process_gene_counts(settings, samplesDict, disruption)
     exit()
 
     ### TODO(REDO Settings...) ###

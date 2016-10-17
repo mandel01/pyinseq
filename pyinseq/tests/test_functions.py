@@ -60,15 +60,24 @@ def test_tab_delimited_samples_to_dict_no_trailing_newline():
     assert pyinseq.tab_delimited_samples_to_dict(s) == \
         OrderedDict([('sample_1', {'barcode': 'AAAA'}), ('sample_2', {'barcode': 'TTTT'})])
 
-'''def test_map_counted_insertions_to_genes():
-    df_sample = pd.DataFrame({'chromosome': [1, 1, 1, 1],
-                              'insertion_nucleotide': [140, 180, 250, 500],
-                              'count': [14, 600, 1000, 700]})
-    df_genome_ftt = pd.DataFrame({'chromosome': [1, 1, 1, 2],
-                                  'start': [100, 300, 500, 100],
-                                  'end': [200, 600, 900, 250]})
-    assert pyinseq.map_counted_insertions_to_genes(df_sample, df_genome_ftt).equals(
-        pd.DataFrame({'sample_name': {(1, 100, 200): 614,
-                                      (1, 300, 600): 700,
-                                      (1, 500, 900): 700,
-                                      (2, 100, 250): 0}}))'''
+def test_insertion_falls_in_gene():
+    # different disruption values; note difference in + vs - orientation
+    assert pyinseq.insertion_falls_in_gene(1000, 3999, '+', 1600, 1.0)
+    assert pyinseq.insertion_falls_in_gene(1000, 3999, '+', 1600, 0.5)
+    assert not pyinseq.insertion_falls_in_gene(1000, 3999, '+', 1600, 0.1)
+    assert pyinseq.insertion_falls_in_gene(1000, 3999, '-', 1600, 1.0)
+    assert not pyinseq.insertion_falls_in_gene(1000, 3999, '-', 1600, 0.5)
+    assert not pyinseq.insertion_falls_in_gene(1000, 3999, '-', 1600, 0.1)
+    # margins of the disruption value
+    assert pyinseq.insertion_falls_in_gene(1000, 3999, '+', 1599, 0.2)
+    assert not pyinseq.insertion_falls_in_gene(1000, 3999, '+', 1600, 0.2)
+    # margins of gene
+    assert pyinseq.insertion_falls_in_gene(1000, 3999, '+', 1000, 1.0)
+    assert pyinseq.insertion_falls_in_gene(1000, 3999, '-', 1000, 1.0)
+    assert pyinseq.insertion_falls_in_gene(1000, 3999, '+', 3999, 1.0)
+    assert pyinseq.insertion_falls_in_gene(1000, 3999, '-', 3999, 1.0)
+    # outside of gene
+    assert not pyinseq.insertion_falls_in_gene(1000, 3999, '+', 999, 1.0)
+    assert not pyinseq.insertion_falls_in_gene(1000, 3999, '+', 4000, 1.0)
+    assert not pyinseq.insertion_falls_in_gene(1000, 3999, '-', 999, 1.0)
+    assert not pyinseq.insertion_falls_in_gene(1000, 3999, '-', 4000, 1.0)
