@@ -14,12 +14,13 @@ import sys
 import yaml
 from shutil import copyfile
 from collections import OrderedDict
+from .demultiplex import demultiplex_fastq, write_reads
 from .gbkconvert import gbk2fna, gbk2ftt
 from .mapReads import bowtie_build, bowtie_map, parse_bowtie
 from .processMapping import mapGenes, buildGeneTable
 from .utils import convert_to_filename, createExperimentDirectories
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 logger = logging.getLogger(__name__)
 
 
@@ -453,7 +454,10 @@ def main(args):
     # --- SET UP BOWTIE --- #
     parse_genbank_setup_bowtie(gbkfile, organism, settings.genome_path)
 
-    # --- IDENTIFY CHROMOSOME SEQUENCES AND MAP WITH BOWTIE --- #
+    # --- DEMULTIPLEX, TRIM, AND MAP WITH BOWTIE --- #
+    logger.info('Demultiplex reads')
+    demultiplex_fastq(reads, samplesDict, settings)
+
     logger.info('Process INSeq samples')
     insertionDict = extract_chromosome_sequence(reads)
     logger.info('Writing insertion count files')
