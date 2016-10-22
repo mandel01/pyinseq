@@ -34,7 +34,7 @@ def demultiplex_fastq(reads, samplesDict, settings):
     for sample in samplesDict:
         bc = samplesDict[sample]['barcode']
         demultiplex_dict[bc] = []
-    demultiplex_dict['other'] = [] # unassigned barcodes
+    demultiplex_dict['other'] = []  # unassigned barcodes
     # count of reads
     nreads = 0
     # For each line in the FASTQ file:
@@ -42,26 +42,29 @@ def demultiplex_fastq(reads, samplesDict, settings):
     #   Cache by barcode; write to the appropriate output files (untrimmed and trimmed)
     pattern = re.compile('''
     ^                               # beginning of string
-    ([ACGT]{{4}})                   # group(1) = barcode, any 4-bp of mixed ACGT
-    ([NACGT][ACGT]{{13,14}}(?:TA))  # group(2) = 16-17 bp of chromosomal sequence
+    ([NACGT][ACGT]{{13,14}}(?:TA))  # group(1) = 16-17 bp of chromosomal sequence
                                     # first bp can be N
                                     # last two must be TA for transposon
-    ({left}|{right})                # group(3) flanking transposon sequence (left, right)
+    ({left}|{right})                # group(2) flanking transposon sequence (left, right)
     '''.format(left=transposon_end['left'], right=transposon_end['right']), re.VERBOSE)
     with screed.open(reads) as seqfile:
         for read in seqfile:
-            m = re.search(pattern, read.sequence)
-            try:
-                barcode, chrom_seq, tn_side = m.group(1), m.group(2), m.group(3)
-                read['trim'] = m.span(2)  # trim slice
-                read['tn_side'] = 'left' if tn_side == transposon_end['left'] else 'right'
-                if barcode in demultiplex_dict:
+            barcode = read.sequence[0:4]
+            # check if barcode is in sample list (i.e. of interest)
+            if barcode in demultiplex_dict:
+                m = re.search(pattern, read.sequence[4:])
+                # check if there is a good transposon sequence
+                try:
+                    chrom_seq, tn_side = m.group(1), m.group(2)
+                    read['trim'] = m.span(1)  # trim slice
+                    read['tn_side'] = 'left' if tn_side == transposon_end['left'] else 'right'
                     demultiplex_dict[barcode].append(read)
-                else:
-                    demultiplex_dict['other'].append(read)
-            except:
+                except AttributeError:
+                    # if there is no transposon sequence then do not trim for bowtie mapping
+                    read['trim'] = None
+            else:
                 demultiplex_dict['other'].append(read)
-            # Every 10^6 sequences write and clear the dictionary
+            # Every 5E6 sequences write and clear the dictionary
             nreads += 1
             if nreads % 5E6 == 0:
                 logger.info('Demultiplexed {:,} samples'.format(nreads))
@@ -106,11 +109,13 @@ def write_trimmed_reads(demultiplex_dict, samplesDict, settings):
                 path=settings.path,
                 sample=barcode_dict[barcode]), 'a') as fo:
                 for read in demultiplex_dict[barcode]:
-                    fo.write('@{n}\n{s}\n+\n{q}\n'.format(
-                        n=read.name,
-                        s=read.sequence[slice(read.trim[0], read.trim[1])],
-                        q=read.quality[slice(read.trim[0], read.trim[1])]))
-
+                    if read.trim:
+                        fo.write('@{n}\n{s}\n+\n{q}\n'.format(
+                            n=read.name,
+                            s=read.sequence[slice(read.trim[0] + 4, read.trim[1] + 4)],
+                            q=read.quality[slice(read.trim[0] + 4, read.trim[1] + 4)]))
+                    else:
+                        print('read with barcode but without tn', read.sequence)
 
 def main():
     '''Start here.'''
