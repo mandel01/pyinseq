@@ -58,10 +58,10 @@ def demultiplex_fastq(reads, samplesDict, settings):
                     chrom_seq, tn_side = m.group(1), m.group(2)
                     read['trim'] = m.span(1)  # trim slice
                     read['tn_side'] = 'left' if tn_side == transposon_end['left'] else 'right'
-                    demultiplex_dict[barcode].append(read)
                 except AttributeError:
                     # if there is no transposon sequence then do not trim for bowtie mapping
                     read['trim'] = None
+                demultiplex_dict[barcode].append(read)
             else:
                 demultiplex_dict['other'].append(read)
             # Every 5E6 sequences write and clear the dictionary
@@ -116,6 +116,8 @@ def write_trimmed_reads(demultiplex_dict, samplesDict, settings):
                             q=read.quality[slice(read.trim[0] + 4, read.trim[1] + 4)]))
                     else:
                         print('read with barcode but without tn', read.sequence)
+                        ## WOULD THIS GET CAUGHT ??
+                        ## ADD NEW READS TO THE TEST DATA FOR THIS ??
 
 def main():
     '''Start here.'''
