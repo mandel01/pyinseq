@@ -37,6 +37,7 @@ def demultiplex_fastq(reads, samplesDict, settings):
     demultiplex_dict['other'] = []  # unassigned barcodes
     # count of reads
     nreads = 0
+    nreads_dict = demultiplex_dict.copy()  # Think about collecting info about number of reads with/out good tn, etc...
     # For each line in the FASTQ file:
     #   Assign to barcode (fastq record into the dictionary)
     #   Cache by barcode; write to the appropriate output files (untrimmed and trimmed)
@@ -50,19 +51,20 @@ def demultiplex_fastq(reads, samplesDict, settings):
     with screed.open(reads) as seqfile:
         for read in seqfile:
             barcode = read.sequence[0:4]
-            # check if barcode is in sample list (i.e. of interest)
             if barcode in demultiplex_dict:
+                # barcode is in sample list == of interest
                 m = re.search(pattern, read.sequence[4:])
-                # check if there is a good transposon sequence
                 try:
+                    # good transposon sequence
                     chrom_seq, tn_side = m.group(1), m.group(2)
                     read['trim'] = m.span(1)  # trim slice
                     read['tn_side'] = 'left' if tn_side == transposon_end['left'] else 'right'
                 except AttributeError:
-                    # if there is no transposon sequence then do not trim for bowtie mapping
+                    # no intact transposon; demultiplex but do not trim/map
                     read['trim'] = None
                 demultiplex_dict[barcode].append(read)
             else:
+                # barcode is not in sample list >> '_other.fastq' file
                 demultiplex_dict['other'].append(read)
             # Every 5E6 sequences write and clear the dictionary
             nreads += 1
@@ -114,10 +116,7 @@ def write_trimmed_reads(demultiplex_dict, samplesDict, settings):
                             n=read.name,
                             s=read.sequence[slice(read.trim[0] + 4, read.trim[1] + 4)],
                             q=read.quality[slice(read.trim[0] + 4, read.trim[1] + 4)]))
-                    else:
-                        print('read with barcode but without tn', read.sequence)
-                        ## WOULD THIS GET CAUGHT ??
-                        ## ADD NEW READS TO THE TEST DATA FOR THIS ??
+
 
 def main():
     '''Start here.'''
