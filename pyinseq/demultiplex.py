@@ -107,15 +107,35 @@ def write_trimmed_reads(demultiplex_dict, samplesDict, settings):
         barcode_dict[samplesDict[sample]['barcode']] = sample
     for barcode in demultiplex_dict:
         if barcode != 'other':
-            with open('{path}/{sample}_trimmed.fastq'.format(
-                path=settings.path,
-                sample=barcode_dict[barcode]), 'a') as fo:
+            # Write all of the TnL (left side of the transposon) reads
+            if transposon_end['left'] == transposon_end['right']:
+                fo = '{path}/{sample}_trimmed.fastq'.format(
+                    path=settings.path,
+                    sample=barcode_dict[barcode])
+            else:
+                fo = '{path}/{sample}_TnL_trimmed.fastq'.format(
+                    path=settings.path,
+                    sample=barcode_dict[barcode])
+            with open(fo, 'a') as fo:
                 for read in demultiplex_dict[barcode]:
-                    if read.trim:
+                    if read.trim and read.tn_side == 'left':
                         fo.write('@{n}\n{s}\n+\n{q}\n'.format(
                             n=read.name,
                             s=read.sequence[slice(read.trim[0] + 4, read.trim[1] + 4)],
                             q=read.quality[slice(read.trim[0] + 4, read.trim[1] + 4)]))
+            # Write all of the TnR (right side of the transposon) reads
+            if transposon_end['left'] != transposon_end['right']:
+                fo = '{path}/{sample}_TnR_trimmed.fastq'.format(
+                    path=settings.path,
+                    sample=barcode_dict[barcode])
+                with open(fo, 'a') as fo:
+                    for read in demultiplex_dict[barcode]:
+                        if read.trim and read.tn_side == 'right':
+                            fo.write('@{n}\n{s}\n+\n{q}\n'.format(
+                                n=read.name,
+                                s=read.sequence[slice(read.trim[0] + 4, read.trim[1] + 4)],
+                                q=read.quality[slice(read.trim[0] + 4, read.trim[1] + 4)]))
+
 
 
 def main():
