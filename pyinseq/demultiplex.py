@@ -14,7 +14,6 @@ import logging
 import regex as re
 import screed
 import sys
-from .config import transposon_end
 from .utils import convert_to_filename
 
 logger = logging.getLogger(__name__)
@@ -47,7 +46,7 @@ def demultiplex_fastq(reads, samplesDict, settings):
                                     # first bp can be N
                                     # last two must be TA for transposon
     ({left}|{right})                # group(2) flanking transposon sequence (left, right)
-    '''.format(left=transposon_end['left'], right=transposon_end['right']), re.VERBOSE)
+    '''.format(left=settings.TnL, right=settings.TnR), re.VERBOSE)
     with screed.open(reads) as seqfile:
         for read in seqfile:
             barcode = read.sequence[0:4]
@@ -58,7 +57,7 @@ def demultiplex_fastq(reads, samplesDict, settings):
                     # good transposon sequence
                     chrom_seq, tn_side = m.group(1), m.group(2)
                     read['trim'] = m.span(1)  # trim slice
-                    read['tn_side'] = 'left' if tn_side == transposon_end['left'] else 'right'
+                    read['tn_side'] = 'left' if tn_side == settings.TnL else 'right'
                 except AttributeError:
                     # no intact transposon; demultiplex but do not trim/map
                     read['trim'] = None
@@ -108,7 +107,7 @@ def write_trimmed_reads(demultiplex_dict, samplesDict, settings):
     for barcode in demultiplex_dict:
         if barcode != 'other':
             # Write all of the TnL (left side of the transposon) reads
-            if transposon_end['left'] == transposon_end['right']:
+            if settings.same_tn_ends:
                 fo = '{path}/{sample}_trimmed.fastq'.format(
                     path=settings.path,
                     sample=barcode_dict[barcode])
@@ -123,8 +122,8 @@ def write_trimmed_reads(demultiplex_dict, samplesDict, settings):
                             n=read.name,
                             s=read.sequence[slice(read.trim[0] + 4, read.trim[1] + 4)],
                             q=read.quality[slice(read.trim[0] + 4, read.trim[1] + 4)]))
-            # Write all of the TnR (right side of the transposon) reads
-            if transposon_end['left'] != transposon_end['right']:
+            # Write all of the TnR (right side of the transposon) reads if TnL != TnR
+            if not settings.same_tn_ends:
                 fo = '{path}/{sample}_TnR_trimmed.fastq'.format(
                     path=settings.path,
                     sample=barcode_dict[barcode])

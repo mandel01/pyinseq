@@ -15,6 +15,7 @@ import yaml
 from shutil import copyfile
 from collections import OrderedDict
 from .analyze import read_sites_file, nfifty, plot_insertions
+from .config import transposon_ends
 from .demultiplex import demultiplex_fastq, write_reads
 from .gbkconvert import gbk2fna, gbk2ftt
 from .mapReads import bowtie_build, bowtie_map, parse_bowtie
@@ -42,6 +43,12 @@ def parseArgs(args):
     parser.add_argument('-d', '--disruption',
                         help='fraction of gene disrupted (0.0 - 1.0)',
                         default=1.0)
+    parser.add_argument('-TnL',
+                        help='transposon left end',
+                        default='ACAGGTTG')
+    parser.add_argument('-TnR',
+                        help='transposon right end',
+                        default='ACAGGTTG')
     parser.add_argument('--nobarcodes',
                         help='barcodes have already been removed from the samples; \
                         -i should list the directory with filenames (.fastq.gz) \
@@ -90,6 +97,14 @@ class Settings():
         self.keepall = False
         self.barcode_length = 4
 
+    def set_tn_ends(self, TnL, TnR):
+        for tn_end in TnL, TnR:
+            for base in tn_end:
+                if base not in 'ACGT':
+                    raise AttributeError('Unexpected non DNA base in specified transposon end.')
+        self.TnL = TnL
+        self.TnR = TnR
+        self.same_tn_ends = (self.TnL == self.TnR)
     # Set up directories?
 
 
@@ -232,6 +247,11 @@ def main(args):
     # sample names and paths
     samples = args.samples
     barcodes_present = not args.nobarcodes
+    # transposon ends
+    settings.set_tn_ends(args.TnL, args.TnR)
+    logger.debug('settings.TnL: {0}, settings.TnR: {1}, settings.same_tn_ends: {2}'.format(
+        settings.TnL, settings.TnR, settings.same_tn_ends))
+    # samples dictionary
     if samples:
         samplesDict = tab_delimited_samples_to_dict(samples)
     else:
