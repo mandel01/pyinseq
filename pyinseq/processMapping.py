@@ -7,7 +7,7 @@ Counts the bowtie hits at each position in each sample
 import csv
 import os
 
-def map_sites(sample, samplesDict, settings):
+def map_sites(sample, settings):
     '''Map insertions to nucleotide sites.'''
     # Placeholder for dictionary of mapped reads in format:
     # {(contig, position) : [Lcount, Rcount]}

@@ -180,35 +180,48 @@ def build_bowtie_index(organism, settings):
 
 
 def pipeline_mapping(organism, settings, samplesDict, disruption):
+    '''Map with bowtie, aggregate site data, and map to genes'''
     # Dictionary of each sample's cpm by gene
-    geneMappings = {}
+    gene_mappings = {}
+    # Counts etc from the mapping
     mapping_data = {}
     for sample in samplesDict:
-        with cd(settings.genome_path):
-            # Paths are relative to the genome_lookup directory
-            # from where bowtie is called
-            bowtie_in = '../' + sample + '_trimmed.fastq'
-            bowtie_out = '../' + sample + '_bowtie.txt'
-            # map to bowtie and produce the output file
-            logger.info('Sample {}: map reads with bowtie'.format(sample))
-            bowtie_msg_out = bowtie_map(organism, bowtie_in, bowtie_out)
-            # store bowtie data for each sample in dictionary
-            mapping_data[sample] = {'bowtie_results': [], 'insertion_sites': []}
-            mapping_data[sample]['bowtie_results'] = parse_bowtie(bowtie_msg_out)
+        # TnL == TnR
+        if settings.same_tn_ends:
+            m, g = map_with_bowtie_and_collect_results(organism, settings, sample, disruption)
+            mapping_data, gene_mappings = {**m, **g}
+        # TnL != TnR
+        else:
+            for side in ['TnL', 'TnR']:
+                sample_side = sample
+                map_with_bowtie_and_collect_results(organism, settings, sample_side, disruption)
+    logger.info('Aggregate gene mapping from all samples into the summary_data_table'.format(sample))
+    build_gene_table(organism, samplesDict, gene_mappings, settings.experiment)
+
+def map_with_bowtie_and_collect_results(organism, settings, sample_side, disruption):
+    '''map reads to bowtie and ...
+
+       sample_side is the sample (if TnL == TnR) or sample_TnL/sample_TnR
+    '''
+    with cd(settings.genome_path):
+        # Paths are relative to the genome_lookup directory
+        # from where bowtie is called
+        bowtie_in = '../' + sample_side + '_trimmed.fastq'
+        bowtie_out = '../' + sample_side + '_bowtie.txt'
+        # map to bowtie and produce the output file
+        logger.info('Sample {}: map reads with bowtie'.format(sample_side))
+        bowtie_msg_out = bowtie_map(organism, bowtie_in, bowtie_out)
+        # store bowtie data for each sample in dictionary
+        mapping_data_sample_side = {'bowtie_results': [], 'insertion_sites': []}
+        mapping_data_sample_side['bowtie_results'] = parse_bowtie(bowtie_msg_out)
+        mapping_data_sample_side['insertion_sites'] = len(map_sites(sample_side, settings))
         # Map each bowtie result to the chromosome
-        logger.info('Sample {}: summarize the site data from the bowtie results'.format(sample))
-        insertions = len(map_sites(sample, samplesDict, settings))
-        mapping_data[sample]['insertion_sites'] = insertions
+        logger.info('Sample {}: summarize the site data from the bowtie results'.format(sample_side))
         # Add gene-level results for the sample to geneMappings
         # Filtered on gene fraction disrupted as specified by -d flag
-        logger.info('Sample {}: map site data to genes'.format(sample))
-        geneMappings[sample] = map_genes(organism, sample, disruption, settings)
-        #if not settings.keepall:
-        #    # Delete trimmed fastq file, bowtie mapping file after writing mapping results
-        #    os.remove(s['trimmedPath'])
-        #    os.remove('results/{0}/{1}'.format(Settings.experiment, bowtieOutputFile))
-    logger.info('Aggregate gene mapping from all samples into the summary_data_table'.format(sample))
-    build_gene_table(organism, samplesDict, geneMappings, settings.experiment)
+        logger.info('Sample {}: map site data to genes'.format(sample_side))
+        gene_mappings_sample_side = map_genes(organism, sample_side, disruption, settings)
+        return mapping_data_sample_side, gene_mappings_sample_side
 
 
 def pipeline_analysis(samplesDict, settings):
