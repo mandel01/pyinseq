@@ -6,21 +6,14 @@ import csv
 import glob
 import logging
 import os
-import numpy as np
-import pandas as pd
-import regex as re
-import screed
-import sys
-import yaml
-from shutil import copyfile
 from collections import OrderedDict
-from .analyze import read_sites_file, nfifty, plot_insertions
-from .config import transposon_ends
-from .demultiplex import demultiplex_fastq, write_reads
+import yaml
+from .analyze import nfifty
+from .demultiplex import demultiplex_fastq
 from .gbkconvert import gbk2fna, gbk2ftt
 from .mapReads import bowtie_build, bowtie_map, parse_bowtie
 from .processMapping import map_sites, map_genes, build_gene_table
-from .utils import convert_to_filename, create_experiment_directories # has logging config
+from .utils import convert_to_filename, create_experiment_directories  # has logging config
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +98,7 @@ class Settings():
         self.TnL = TnL
         self.TnR = TnR
         self.same_tn_ends = (self.TnL == self.TnR)
-    # Set up directories?
+        # Set up directories?
 
 
 def set_paths(experiment_name):
@@ -121,7 +114,9 @@ def set_paths(experiment_name):
 def set_disruption(d):
     '''Check that gene disrution is 0.0 to 1.0; otherwise set to 1.0'''
     if d < 0.0 or d > 1.0:
-        logger.error('Disruption value provided ({0}) is not in range 0.0 to 1.0; proceeding with default value of 1.0'.format(d))
+        logger.error(
+            'Disruption value provided ({0}) is not in range 0.0 to 1.0; proceeding with default value of 1.0'.format(
+                d))
         d = 1.0
     return d
 
@@ -137,7 +132,7 @@ def tab_delimited_samples_to_dict(sample_file):
                 sample = convert_to_filename(line[0])
                 barcode = line[1].upper()
                 if sample not in samplesDict and barcode not in samplesDict.values():
-                        samplesDict[sample] = {'barcode': barcode}
+                    samplesDict[sample] = {'barcode': barcode}
                 else:
                     raise IOError('Error: duplicate sample {0} barcode {1}'.format(sample, barcode))
     return samplesDict
@@ -180,7 +175,11 @@ def build_bowtie_index(organism, settings):
 
 
 def pipeline_mapping(organism, settings, samplesDict, disruption):
-    '''Map with bowtie, aggregate site data, and map to genes'''
+    '''
+    Map with bowtie, aggregate site data, and map to genes.
+
+    For each sample in samplesDict, map to sites, aggregate sites, map to genes.
+    '''
     # Dictionary of each sample's cpm by gene
     gene_mappings = {}
     # Counts etc from the mapping
@@ -195,13 +194,15 @@ def pipeline_mapping(organism, settings, samplesDict, disruption):
             for side in ['TnL', 'TnR']:
                 sample_side = sample
                 map_with_bowtie_and_collect_results(organism, settings, sample_side, disruption)
-    logger.info('Aggregate gene mapping from all samples into the summary_data_table'.format(sample))
+    logger.info('Aggregate gene mapping from all samples into the summary_data_table.')
     build_gene_table(organism, samplesDict, gene_mappings, settings.experiment)
 
-def map_with_bowtie_and_collect_results(organism, settings, sample_side, disruption):
-    '''map reads to bowtie and ...
 
-       sample_side is the sample (if TnL == TnR) or sample_TnL/sample_TnR
+def map_with_bowtie_and_collect_results(organism, settings, sample_side, disruption):
+    '''
+    Map reads to bowtie and ...
+
+    sample_side is the sample (if TnL == TnR) or sample_TnL/sample_TnR
     '''
     with cd(settings.genome_path):
         # Paths are relative to the genome_lookup directory
@@ -287,7 +288,7 @@ def main(args):
     logger.info('Map with bowtie')
     pipeline_mapping(organism, settings, samplesDict, disruption)
 
-    #if not samples:
+    # if not samples:
     #    Settings.summaryDict['total reads'] = 0
     #    for sample in Settings.samplesDict:
     #        print(Settings.samplesDict[sample])
@@ -298,6 +299,3 @@ def main(args):
 
     # --- CONFIRM COMPLETION --- #
     logger.info('***** pyinseq pipeline complete! *****')
-
-if __name__ == '__main__':
-    main()
